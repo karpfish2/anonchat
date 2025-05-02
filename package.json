@@ -1,0 +1,291 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Анонимный чат</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Roboto', Arial, sans-serif;
+    }
+    
+    body {
+      background-color: #f5f5f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+    }
+    
+    .chat-header {
+      background-color: #4a76a8;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px 5px 0 0;
+      margin-bottom: 10px;
+    }
+    
+    .messages-container {
+      flex: 1;
+      overflow-y: auto;
+      background-color: white;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+    
+    .message {
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      border-radius: 5px;
+      background-color: #f1f1f1;
+      max-width: 80%;
+    }
+    
+    .message-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 2px;
+      font-size: 12px;
+      color: #666;
+    }
+    
+    .message-username {
+      font-weight: bold;
+      color: #4a76a8;
+    }
+    
+    .message-text {
+      word-wrap: break-word;
+    }
+    
+    .input-container {
+      display: flex;
+      gap: 10px;
+    }
+    
+    #message-input {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+      outline: none;
+    }
+    
+    #send-button {
+      padding: 10px 20px;
+      background-color: #4a76a8;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    
+    #send-button:hover {
+      background-color: #3d6293;
+    }
+    
+    .typing-indicator {
+      font-size: 12px;
+      color: #666;
+      font-style: italic;
+      height: 20px;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="chat-header">
+      <h2>Анонимный чат</h2>
+      <div id="username-display"></div>
+    </div>
+    <div class="messages-container" id="messages-container"></div>
+    <div class="typing-indicator" id="typing-indicator"></div>
+    <div class="input-container">
+      <input type="text" id="message-input" placeholder="Введите сообщение...">
+      <button id="send-button">Отправить</button>
+    </div>
+  </div>
+
+  <script>
+    // Настройка WebSocket соединения
+    const socket = new WebSocket(`${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`);
+    
+    // DOM элементы
+    const messagesContainer = document.getElementById('messages-container');
+    const messageInput = document.getElementById('message-input');
+    const sendButton = document.getElementById('send-button');
+    const typingIndicator = document.getElementById('typing-indicator');
+    const usernameDisplay = document.getElementById('username-display');
+    
+    // Имя пользователя
+    let username = '';
+    
+    // Таймер для отслеживания набора текста
+    let typingTimer = null;
+    
+    // Обработка открытия соединения
+    socket.onopen = () => {
+      console.log('Соединение установлено');
+    };
+    
+    // Обработка входящих сообщений
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      
+      switch (data.type) {
+        case 'history':
+          // Сохранение имени пользователя
+          username = data.username;
+          usernameDisplay.textContent = `Ваше имя: ${username}`;
+          
+          // Отображение истории сообщений
+          data.messages.forEach(msg => {
+            appendMessage(msg);
+          });
+          
+          // Прокрутка к последнему сообщению
+          scrollToBottom();
+          break;
+          
+        case 'message':
+          // Отображение нового сообщения
+          appendMessage(data.message);
+          scrollToBottom();
+          break;
+          
+        case 'typing':
+          // Отображение печатающих пользователей
+          updateTypingIndicator(data.users);
+          break;
+      }
+    };
+    
+    // Обработка ошибок соединения
+    socket.onerror = (error) => {
+      console.error('WebSocket ошибка:', error);
+    };
+    
+    // Обработка закрытия соединения
+    socket.onclose = () => {
+      console.log('Соединение закрыто');
+    };
+    
+    // Добавление сообщения в контейнер
+    function appendMessage(message) {
+      const messageElement = document.createElement('div');
+      messageElement.classList.add('message');
+      
+      const headerElement = document.createElement('div');
+      headerElement.classList.add('message-header');
+      
+      const usernameElement = document.createElement('span');
+      usernameElement.classList.add('message-username');
+      usernameElement.textContent = message.username;
+      
+      const timeElement = document.createElement('span');
+      timeElement.classList.add('message-time');
+      timeElement.textContent = message.time;
+      
+      headerElement.appendChild(usernameElement);
+      headerElement.appendChild(timeElement);
+      
+      const textElement = document.createElement('div');
+      textElement.classList.add('message-text');
+      textElement.textContent = message.text;
+      
+      messageElement.appendChild(headerElement);
+      messageElement.appendChild(textElement);
+      
+      messagesContainer.appendChild(messageElement);
+    }
+    
+    // Прокрутка контейнера сообщений вниз
+    function scrollToBottom() {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    
+    // Обновление индикатора печати
+    function updateTypingIndicator(users) {
+      if (users.length === 0) {
+        typingIndicator.textContent = '';
+      } else if (users.length === 1) {
+        typingIndicator.textContent = `${users[0]} печатает...`;
+      } else if (users.length === 2) {
+        typingIndicator.textContent = `${users[0]} и ${users[1]} печатают...`;
+      } else {
+        typingIndicator.textContent = `${users.length} пользователей печатают...`;
+      }
+    }
+    
+    // Отправка статуса печати
+    function sendTypingStatus(isTyping) {
+      socket.send(JSON.stringify({
+        type: 'typing',
+        isTyping: isTyping
+      }));
+    }
+    
+    // Отправка сообщения
+    function sendMessage() {
+      const text = messageInput.value.trim();
+      
+      if (text && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({
+          type: 'chat',
+          text: text
+        }));
+        
+        messageInput.value = '';
+        messageInput.focus();
+      }
+    }
+    
+    // Обработчики событий
+    sendButton.addEventListener('click', sendMessage);
+    
+    messageInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+    
+    messageInput.addEventListener('input', () => {
+      // Отправка статуса печати
+      sendTypingStatus(true);
+      
+      // Сброс таймера
+      clearTimeout(typingTimer);
+      
+      // Установка нового таймера
+      typingTimer = setTimeout(() => {
+        sendTypingStatus(false);
+      }, 2000);
+    });
+    
+    messageInput.addEventListener('blur', () => {
+      // Сброс статуса печати при потере фокуса
+      clearTimeout(typingTimer);
+      sendTypingStatus(false);
+    });
+    
+    // Прокрутка вниз при загрузке страницы
+    window.addEventListener('load', scrollToBottom);
+  </script>
+</body>
+</html>
